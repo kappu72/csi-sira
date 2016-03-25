@@ -27,8 +27,7 @@ const allReducers = combineReducers({
     queryform: () => {return {}; },
     queryformconfig: () => {return {}; },
     cardtemplate: require('../reducers/card'),
-    grid: require('../reducers/grid'),
-    rifiuti: require('../reducers/rifiuti')
+    grid: require('../reducers/grid')
 });
 
 const rootReducer = (state = {}, action) => {
