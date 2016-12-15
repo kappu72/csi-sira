@@ -292,6 +292,7 @@ div.mappaSiraDecisionale .querypanel-container .querypanel .panel-heading [class
     cursor: auto;
 }
 .catalog-object .toc-title{
+    cursor: pointer;
     margin-left: 15px;
 }
 .toc-group-children .catalog-object:nth-child(2n+1) {
