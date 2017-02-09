@@ -9,9 +9,18 @@ const React = require('react');
 const {connect} = require('react-redux');
 const {Tabs, Tab} = require('react-bootstrap');
 const Spinner = require('react-spinkit');
-const {toggleNode, getThematicViewConfig, getMetadataObjects, selectSubCategory} = require('../actions/siracatalog');
+const {toggleNode, getMetadataObjects, selectSubCategory} = require('../actions/siracatalog');
 
 const {tocSelector} = require('../selectors/sira');
+const {setProfile} = require('../actions/userprofile');
+const {toggleSiraControl} = require('../actions/controls');
+const {
+    // SiraQueryPanel action functions
+    expandFilterPanel,
+    loadFeatureTypeConfig,
+    setActiveFeatureType
+} = require('../actions/siradec');
+const {setGridType} = require('../actions/grid');
 
 const Header = require('../components/Header');
 const SiraSearchBar = require('../components/SiraSearchBar');
@@ -19,10 +28,29 @@ const TOC = require('../../MapStore2/web/client/components/TOC/TOC');
 const DefaultGroup = require('../../MapStore2/web/client/components/TOC/DefaultGroup');
 const DefaultNode = require('../components/catalog/DefaultNodeDataset');
 const Footer = require('../components/Footer');
-const Vista = connect( null, {
-    addToMap: getThematicViewConfig
-})(require('../components/catalog/VistaDataset'));
-
+const Vista = require('../components/catalog/VistaDataset');
+const authParams = {
+    admin: {
+         userName: "admin",
+         authkey: "84279da9-f0b9-4e45-ac97-48413a48e33f"
+    },
+    A: {
+         userName: "profiloa",
+         authkey: "59ccadf2-963e-448c-bc9a-b3a5e8ed20d7"
+    },
+    B: {
+         userName: "profilob",
+         authkey: "d6e5f5a5-2d26-43aa-8af3-13f8dcc0d03c"
+    },
+    C: {
+         userName: "profiloc",
+         authkey: "0505bb64-21b6-436c-86f9-9c1280f15a6c"
+    },
+    D: {
+         userName: "profilod",
+         authkey: "4176ea85-9a9a-42a5-8913-8f6f85813dab"
+    }
+ };
 
 const Dataset = React.createClass({
     propTypes: {
@@ -46,17 +74,29 @@ const Dataset = React.createClass({
         subcat: React.PropTypes.string,
         configOggetti: React.PropTypes.object,
         authParams: React.PropTypes.object,
-        userprofile: React.PropTypes.object
+        userprofile: React.PropTypes.object,
+        setProfile: React.PropTypes.func,
+        params: React.PropTypes.object,
+        activeFeatureType: React.PropTypes.string,
+        loadFeatureTypeConfig: React.PropTypes.func,
+        setActiveFeatureType: React.PropTypes.func,
+        setGridType: React.PropTypes.func
+    },
+    contextTypes: {
+        router: React.PropTypes.object
     },
     getInitialState() {
             return {
+                params: {},
                 searchText: "",
                 showCategories: false,
-                onToggle: () => {}
+                onToggle: () => {},
+                setProfile: () => {}
             };
         },
         componentWillMount() {
             const {nodesLoaded, loading, category} = this.props;
+            this.props.setProfile(this.props.params.profile, authParams[this.props.params.profile]);
             if (!nodesLoaded && !loading && category) {
                 this.loadMetadata({category: category});
             }
@@ -84,23 +124,32 @@ const Dataset = React.createClass({
     renderResults() {
         const {loading, objects, views} = this.props;
         const {showCategories} = this.state;
+        const searchSwitch = this.props.nodes.length > 0 ? (
+            <div className="ricerca-home dataset-categories-switch-container">
+                <div className="dataset-categories-switch" onClick={() => this.setState({showCategories: !showCategories})}>
+                    <span>{showCategories ? 'Nascondi Categorie' : 'Mostra Categorie'} </span>
+                </div>
+            </div>) : (<noscript/>);
         const tocObjects = (
             <TOC id="dataset-toc" nodes={showCategories ? this.props.nodes : this.props.objects}>
                     { showCategories ?
                     (<DefaultGroup animateCollapse={false} onToggle={this.props.onToggle}>
                         <DefaultNode
+                            expandFilterPanel={this.openFilterPanel}
+                            toggleSiraControl={this.searchAll}
                             onToggle={this.props.onToggle}
                             groups={this.props.nodes}
                             />
                     </DefaultGroup>) : (<DefaultNode
+                            expandFilterPanel={this.openFilterPanel}
+                            toggleSiraControl={this.searchAll}
                             flat={true}
                             />) }
                 </TOC>);
         const viste = this.props.views ? this.props.views.map((v) => (<Vista key={v.id}
-            expandFilterPanel={this.props.expandFilterPanel}
-            toggleSiraControl={this.props.toggleSiraControl}
             node={v}
             onToggle={this.props.onToggle}/>)) : (<div/>);
+        const objEl = [searchSwitch, tocObjects];
         return (
             <Tabs
                 className="dataset-tabs"
@@ -109,7 +158,7 @@ const Dataset = React.createClass({
                 <Tab
                     eventKey={'objects'}
                     title={`Oggetti (${objects ? objects.length : 0})`}>
-                    {loading ? this.renderSpinner() : tocObjects}
+                    {loading ? this.renderSpinner() : objEl}
                 </Tab>
                 <Tab eventKey={'views'}
                     title={`Viste Tematiche (${views ? views.length : 0})`}>
@@ -119,17 +168,11 @@ const Dataset = React.createClass({
     },
     render() {
         const {category} = this.props;
-        const {showCategories} = this.state;
         return (
             <div className="dataset-container home">
                 <div style={{minHeight: '100%', position: 'relative'}}>
                     <Header/>
                     {this.renderSerchBar()}
-                    <div className="ricerca-home dataset-categories-switch-container">
-                    <div className="dataset-categories-switch" onClick={() => this.setState({showCategories: !showCategories})}>
-                       <span>{showCategories ? 'Nascondi Categorie' : 'Mostra Categorie'} </span>
-                     </div>
-                    </div>
                     <div className="dataset-results-container">
                         {category ? this.renderResults() : (<noscript/>)}
                     </div>
@@ -151,11 +194,38 @@ const Dataset = React.createClass({
         if (!this.props.loading) {
             this.props.getMetadataObjects({params});
         }
+    },
+    openFilterPanel(status, ftType) {
+        const featureType = ftType.replace('featuretype=', '').replace('.json', '');
+        if (!this.props.configOggetti[featureType]) {
+            this.props.loadFeatureTypeConfig(null, {authkey: this.props.userprofile.authParams.authkey}, featureType, true);
+        }else if (this.props.activeFeatureType !== featureType) {
+            this.props.setActiveFeatureType(featureType);
+        }
+        this.props.expandFilterPanel(status);
+        this.context.router.push(`/full/${this.props.params.profile}/`);
+    },
+    searchAll(ftType) {
+        const featureType = ftType.replace('featuretype=', '').replace('.json', '');
+        if (!this.props.configOggetti[featureType]) {
+            this.props.loadFeatureTypeConfig(null, {authkey: this.props.userprofile.authParams.authkey}, featureType, true);
+            }else if (this.props.activeFeatureType !== featureType) {
+                this.props.setActiveFeatureType(featureType);
+            }
+        this.props.setGridType('all_results');
+        this.props.toggleSiraControl('grid', true);
+        this.context.router.push(`/full/${this.props.params.profile}/`);
     }
 });
 
 module.exports = connect(tocSelector, {
     getMetadataObjects,
     onToggle: toggleNode,
-    selectSubCategory
+    selectSubCategory,
+    setProfile,
+    expandFilterPanel,
+    loadFeatureTypeConfig,
+    setActiveFeatureType,
+    toggleSiraControl,
+    setGridType
 })(Dataset);
